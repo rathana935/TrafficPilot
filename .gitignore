@@ -1,0 +1,17 @@
+
+.env
+.env.*
+!.env.example
+
+node_modules/
+db.json
+db*.json
+*.backup
+*.bak
+bot-backup.js
+bot-before-*.js
+bot_backup_*.js
+bot.js.backup
+bot.js_before_*.js
+
+limit-test/
