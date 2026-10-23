@@ -1,4 +1,4 @@
-
+ 
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,9 +8,10 @@
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#101426;color:#eef2ff;font:15px Arial,sans-serif}
-main{max-width:1200px;margin:28px auto;padding:16px}
+main{max-width:1400px;margin:28px auto;padding:16px}
 h1{margin-bottom:6px}
-.muted{color:#a8b1cc}
+h2{margin-top:0}
+.muted,small{color:#a8b1cc}
 .panel{background:#1b2340;border:1px solid #303b60;border-radius:12px;padding:18px;margin:16px 0}
 input,button,select{font:inherit;padding:11px;border-radius:7px;border:1px solid #465478}
 input,select{background:#111a31;color:white;max-width:100%}
@@ -22,19 +23,22 @@ button:hover{opacity:.9}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .stat{background:#111a31;padding:14px;border-radius:9px}
 .stat strong{font-size:24px;display:block;margin-top:8px;overflow-wrap:anywhere}
-.tablewrap{overflow:auto}
+.tablewrap{overflow:auto;max-height:600px}
 table{border-collapse:collapse;width:100%;min-width:850px}
 th,td{text-align:left;padding:11px;border-bottom:1px solid #303b60;white-space:nowrap}
-th{background:#222d4d;position:sticky;top:0}
+th{background:#222d4d;position:sticky;top:0;z-index:1}
 .error{color:#ff9caa;white-space:pre-wrap}
 .success{color:#a5f3c4}
-small{color:#a8b1cc}
+.badge{display:inline-block;padding:4px 8px;border-radius:6px;background:#303b60}
+.section-tools{margin-bottom:12px}
+button.secondary{background:#465478}
+@media(max-width:600px){main{padding:10px}.panel{padding:12px}.row input{min-width:100%}}
 </style>
 </head>
 <body>
 <main>
   <h1>TrafficPilot Admin</h1>
-  <p class="muted">Private dashboard · Read-only user and transaction records</p>
+  <p class="muted">Private dashboard · Protected administrative records</p>
 
   <section id="login" class="panel">
     <h2>Administrator login</h2>
@@ -53,7 +57,9 @@ small{color:#a8b1cc}
       <button id="refresh">Refresh data</button>
       <button id="export">Export users CSV</button>
       <button id="exportTransactions">Export transactions CSV</button>
-      <button id="logout">Log out</button>
+      <button id="exportWithdrawals">Export withdrawals CSV</button>
+      <button id="exportReviews">Export task reviews CSV</button>
+      <button id="logout" class="secondary">Log out</button>
     </div>
     <p id="status" role="status" class="muted"></p>
 
@@ -63,6 +69,8 @@ small{color:#a8b1cc}
       <div class="stat">Campaigns<strong id="totalCampaigns">—</strong></div>
       <div class="stat">Submissions<strong id="totalSubmissions">—</strong></div>
       <div class="stat">Deposits<strong id="totalDeposits">—</strong></div>
+      <div class="stat">Withdrawals<strong id="totalWithdrawals">—</strong></div>
+      <div class="stat">Pending reviews<strong id="pendingReviews">—</strong></div>
     </div>
 
     <section class="panel">
@@ -91,6 +99,9 @@ small{color:#a8b1cc}
 
     <section class="panel">
       <h2>Deposits</h2>
+      <div class="row section-tools">
+        <input id="depositSearch" type="search" placeholder="Search deposit ID, user ID, or status">
+      </div>
       <div class="tablewrap">
         <table><thead><tr>
           <th>ID</th><th>User ID</th><th>Amount</th><th>Status</th><th>Date</th>
@@ -100,10 +111,57 @@ small{color:#a8b1cc}
 
     <section class="panel">
       <h2>Transactions</h2>
+      <div class="row section-tools">
+        <input id="transactionSearch" type="search" placeholder="Search user ID, type, or description">
+      </div>
       <div class="tablewrap">
         <table><thead><tr>
           <th>Date</th><th>User ID</th><th>Type</th><th>Amount</th><th>Description</th>
         </tr></thead><tbody id="transactionsBody"></tbody></table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Withdrawals</h2>
+      <p class="muted">Withdrawal requests and payment details. This table is read-only.</p>
+      <div class="row section-tools">
+        <input id="withdrawalSearch" type="search" placeholder="Search withdrawal ID, user ID, or method">
+        <select id="withdrawalStatus">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="paid">Paid</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+      <p id="withdrawalCount" class="muted"></p>
+      <div class="tablewrap">
+        <table><thead><tr>
+          <th>Withdrawal ID</th><th>User ID</th><th>Amount</th>
+          <th>Method</th><th>Account / Wallet</th><th>Status</th><th>Date</th>
+        </tr></thead><tbody id="withdrawalsBody"></tbody></table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Task Reviews</h2>
+      <p class="muted">Review submitted task records and proof references. No approval or reward actions are performed here.</p>
+      <div class="row section-tools">
+        <input id="reviewSearch" type="search" placeholder="Search submission ID, user ID, or campaign ID">
+        <select id="reviewStatus">
+          <option value="">All statuses</option>
+          <option value="pending_review">Pending review</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <p id="reviewCount" class="muted"></p>
+      <div class="tablewrap">
+        <table><thead><tr>
+          <th>Submission ID</th><th>User ID</th><th>Campaign ID</th>
+          <th>Status</th><th>Proof reference</th><th>Submitted</th>
+        </tr></thead><tbody id="reviewsBody"></tbody></table>
       </div>
     </section>
   </section>
@@ -119,6 +177,16 @@ function safeText(value) {
   return value == null ? "" : String(value);
 }
 
+function firstValue(object, keys, fallback = "—") {
+  for (const key of keys) {
+    const value = object?.[key];
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+  return fallback;
+}
+
 function cell(row, value) {
   const td = document.createElement("td");
   td.textContent = safeText(value);
@@ -129,6 +197,15 @@ function dateText(value) {
   if (!value) return "—";
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? safeText(value) : d.toLocaleString();
+}
+
+function arrayOf(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizedStatus(item) {
+  return safeText(firstValue(item, ["status", "state"], "unknown"))
+    .trim().toLowerCase();
 }
 
 async function api(url, options = {}) {
@@ -153,10 +230,9 @@ function showDashboard(visible) {
 
 function campaignCounts() {
   const counts = {};
-  const submissions = Array.isArray(data.submissions) ? data.submissions : [];
-  for (const s of submissions) {
-    if (String(s.status || "").toLowerCase() !== "approved") continue;
-    const id = String(s.userId ?? s.telegramId ?? "");
+  for (const s of arrayOf(data.submissions)) {
+    if (normalizedStatus(s) !== "approved") continue;
+    const id = safeText(firstValue(s, ["userId", "telegramId"], ""));
     if (id) counts[id] = (counts[id] || 0) + 1;
   }
   return counts;
@@ -195,33 +271,137 @@ function userRows() {
   $("userCount").textContent = `${filtered.length} of ${users.length} users`;
 }
 
-function render() {
-  const users = Object.values(data.users || {});
-  $("totalUsers").textContent = users.length;
-  $("totalCredits").textContent = users.reduce((sum,u)=>sum+(Number(u.credits)||0),0);
-  $("totalCampaigns").textContent = (data.campaigns || []).length;
-  $("totalSubmissions").textContent = (data.submissions || []).length;
-  $("totalDeposits").textContent = (data.deposits || []).length;
-
-  userRows();
+function renderDeposits() {
+  const q = $("depositSearch").value.trim().toLowerCase();
+  const deposits = arrayOf(data.deposits).slice().reverse().filter(d =>
+    [d.id, d.userId, d.telegramId, d.status]
+      .some(v => safeText(v).toLowerCase().includes(q))
+  );
 
   $("depositsBody").replaceChildren();
-  for (const d of (data.deposits || []).slice().reverse()) {
+  for (const d of deposits) {
     const tr = document.createElement("tr");
-    cell(tr, d.id); cell(tr, d.userId ?? d.telegramId);
-    cell(tr, d.amount ?? d.credits ?? d.usdAmount);
-    cell(tr, d.status); cell(tr, dateText(d.createdAt || d.date));
+    cell(tr, firstValue(d, ["id", "depositId"]));
+    cell(tr, firstValue(d, ["userId", "telegramId"]));
+    cell(tr, firstValue(d, ["amount", "credits", "usdAmount"]));
+    cell(tr, firstValue(d, ["status"]));
+    cell(tr, dateText(firstValue(d, ["createdAt", "date"], "")));
     $("depositsBody").appendChild(tr);
   }
+}
+
+function renderTransactions() {
+  const q = $("transactionSearch").value.trim().toLowerCase();
+  const transactions = arrayOf(data.transactions).slice().reverse().filter(t =>
+    [t.userId, t.telegramId, t.type, t.description, t.amount]
+      .some(v => safeText(v).toLowerCase().includes(q))
+  );
 
   $("transactionsBody").replaceChildren();
-  for (const t of (data.transactions || []).slice().reverse()) {
+  for (const t of transactions) {
     const tr = document.createElement("tr");
-    cell(tr, dateText(t.createdAt || t.date));
-    cell(tr, t.userId); cell(tr, t.type); cell(tr, t.amount);
-    cell(tr, t.description);
+    cell(tr, dateText(firstValue(t, ["createdAt", "date"], "")));
+    cell(tr, firstValue(t, ["userId", "telegramId"]));
+    cell(tr, firstValue(t, ["type", "action"]));
+    cell(tr, firstValue(t, ["amount", "credits"]));
+    cell(tr, firstValue(t, ["description", "reason", "note"]));
     $("transactionsBody").appendChild(tr);
   }
+}
+
+function renderWithdrawals() {
+  const q = $("withdrawalSearch").value.trim().toLowerCase();
+  const statusFilter = $("withdrawalStatus").value.toLowerCase();
+
+  const withdrawals = arrayOf(data.withdrawals).slice().reverse().filter(w => {
+    const searchable = [
+      w.id, w.withdrawalId, w.userId, w.telegramId,
+      w.method, w.paymentMethod, w.status
+    ].some(v => safeText(v).toLowerCase().includes(q));
+
+    const matchesStatus = !statusFilter ||
+      normalizedStatus(w) === statusFilter;
+
+    return searchable && matchesStatus;
+  });
+
+  $("withdrawalsBody").replaceChildren();
+  for (const w of withdrawals) {
+    const tr = document.createElement("tr");
+    cell(tr, firstValue(w, ["id", "withdrawalId", "requestId"]));
+    cell(tr, firstValue(w, ["userId", "telegramId"]));
+    cell(tr, firstValue(w, ["amount", "credits", "usdAmount"]));
+    cell(tr, firstValue(w, ["method", "paymentMethod", "network"]));
+    cell(tr, firstValue(w, [
+      "account", "accountNumber", "walletAddress",
+      "wallet", "paymentDetails", "destination"
+    ]));
+    cell(tr, firstValue(w, ["status", "state"]));
+    cell(tr, dateText(firstValue(w, ["createdAt", "date", "requestedAt"], "")));
+    $("withdrawalsBody").appendChild(tr);
+  }
+
+  $("withdrawalCount").textContent =
+    `${withdrawals.length} of ${arrayOf(data.withdrawals).length} withdrawal records`;
+}
+
+function renderReviews() {
+  const q = $("reviewSearch").value.trim().toLowerCase();
+  const statusFilter = $("reviewStatus").value.toLowerCase();
+
+  const submissions = arrayOf(data.submissions).slice().reverse().filter(s => {
+    const searchable = [
+      s.id, s.submissionId, s.userId, s.telegramId,
+      s.campaignId, s.status
+    ].some(v => safeText(v).toLowerCase().includes(q));
+
+    const matchesStatus = !statusFilter ||
+      normalizedStatus(s) === statusFilter;
+
+    return searchable && matchesStatus;
+  });
+
+  $("reviewsBody").replaceChildren();
+  for (const s of submissions) {
+    const tr = document.createElement("tr");
+    cell(tr, firstValue(s, ["id", "submissionId"]));
+    cell(tr, firstValue(s, ["userId", "telegramId"]));
+    cell(tr, firstValue(s, ["campaignId", "campaign_id"]));
+    cell(tr, firstValue(s, ["status", "state"]));
+    cell(tr, firstValue(s, [
+      "proof", "proofUrl", "proofText", "screenshot",
+      "screenshotUrl", "evidence", "details"
+    ]));
+    cell(tr, dateText(firstValue(s, [
+      "createdAt", "submittedAt", "date"
+    ], "")));
+    $("reviewsBody").appendChild(tr);
+  }
+
+  $("reviewCount").textContent =
+    `${submissions.length} of ${arrayOf(data.submissions).length} submissions`;
+}
+
+function render() {
+  const users = Object.values(data.users || {});
+  const submissions = arrayOf(data.submissions);
+  const withdrawals = arrayOf(data.withdrawals);
+
+  $("totalUsers").textContent = users.length;
+  $("totalCredits").textContent =
+    users.reduce((sum,u)=>sum+(Number(u.credits)||0),0);
+  $("totalCampaigns").textContent = arrayOf(data.campaigns).length;
+  $("totalSubmissions").textContent = submissions.length;
+  $("totalDeposits").textContent = arrayOf(data.deposits).length;
+  $("totalWithdrawals").textContent = withdrawals.length;
+  $("pendingReviews").textContent =
+    submissions.filter(s => normalizedStatus(s) === "pending_review").length;
+
+  userRows();
+  renderDeposits();
+  renderTransactions();
+  renderWithdrawals();
+  renderReviews();
 }
 
 async function loadData() {
@@ -230,7 +410,8 @@ async function loadData() {
     data = await api("/api/admin/data");
     showDashboard(true);
     render();
-    $("status").textContent = "Data loaded. Last updated: " + new Date().toLocaleString();
+    $("status").textContent =
+      "Data loaded. Last updated: " + new Date().toLocaleString();
   } catch (err) {
     data = null;
     showDashboard(false);
@@ -250,8 +431,12 @@ function downloadCSV(filename, rows) {
   const blob = new Blob(["\uFEFF" + csv], {type:"text/csv;charset=utf-8"});
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 $("loginForm").addEventListener("submit", async e => {
@@ -272,6 +457,12 @@ $("loginForm").addEventListener("submit", async e => {
 $("refresh").addEventListener("click", loadData);
 $("search").addEventListener("input", userRows);
 $("sort").addEventListener("change", userRows);
+$("depositSearch").addEventListener("input", renderDeposits);
+$("transactionSearch").addEventListener("input", renderTransactions);
+$("withdrawalSearch").addEventListener("input", renderWithdrawals);
+$("withdrawalStatus").addEventListener("change", renderWithdrawals);
+$("reviewSearch").addEventListener("input", renderReviews);
+$("reviewStatus").addEventListener("change", renderReviews);
 
 $("export").addEventListener("click", () => {
   const counts = campaignCounts();
@@ -285,14 +476,61 @@ $("export").addEventListener("click", () => {
 
 $("exportTransactions").addEventListener("click", () => {
   const rows = [["Date","User ID","Type","Amount","Description"]];
-  for (const t of (data.transactions || [])) {
-    rows.push([t.createdAt||t.date,t.userId,t.type,t.amount,t.description]);
+  for (const t of arrayOf(data.transactions)) {
+    rows.push([
+      t.createdAt||t.date, t.userId ?? t.telegramId,
+      t.type, t.amount, t.description
+    ]);
   }
   downloadCSV("trafficpilot-transactions.csv", rows);
 });
 
+$("exportWithdrawals").addEventListener("click", () => {
+  const rows = [[
+    "Withdrawal ID","User ID","Amount","Method",
+    "Account / Wallet","Status","Date"
+  ]];
+  for (const w of arrayOf(data.withdrawals)) {
+    rows.push([
+      firstValue(w, ["id", "withdrawalId", "requestId"], ""),
+      firstValue(w, ["userId", "telegramId"], ""),
+      firstValue(w, ["amount", "credits", "usdAmount"], ""),
+      firstValue(w, ["method", "paymentMethod", "network"], ""),
+      firstValue(w, [
+        "account", "accountNumber", "walletAddress",
+        "wallet", "paymentDetails", "destination"
+      ], ""),
+      firstValue(w, ["status", "state"], ""),
+      firstValue(w, ["createdAt", "date", "requestedAt"], "")
+    ]);
+  }
+  downloadCSV("trafficpilot-withdrawals.csv", rows);
+});
+
+$("exportReviews").addEventListener("click", () => {
+  const rows = [[
+    "Submission ID","User ID","Campaign ID","Status","Proof reference","Submitted"
+  ]];
+  for (const s of arrayOf(data.submissions)) {
+    rows.push([
+      firstValue(s, ["id", "submissionId"], ""),
+      firstValue(s, ["userId", "telegramId"], ""),
+      firstValue(s, ["campaignId", "campaign_id"], ""),
+      firstValue(s, ["status", "state"], ""),
+      firstValue(s, [
+        "proof", "proofUrl", "proofText", "screenshot",
+        "screenshotUrl", "evidence", "details"
+      ], ""),
+      firstValue(s, ["createdAt", "submittedAt", "date"], "")
+    ]);
+  }
+  downloadCSV("trafficpilot-task-reviews.csv", rows);
+});
+
 $("logout").addEventListener("click", async () => {
-  try { await api("/api/admin/logout", {method:"POST",body:"{}"}); } catch {}
+  try {
+    await api("/api/admin/logout", {method:"POST",body:"{}"});
+  } catch {}
   data = null;
   showDashboard(false);
   $("status").textContent = "";
