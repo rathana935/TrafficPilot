@@ -584,11 +584,10 @@ bot.hears("📋 Available Tasks", async ctx => {
   await showAvailableTasks(ctx);
 });
 
-bot.hears("📝 Submit Task", async ctx => {
+bot.hears(/^.*Submit Task$/, async ctx => {
   getUser(ctx.from);
   await showAvailableTasks(ctx);
 });
-
 bot.hears("💰 My Wallet", async ctx => {
   const user = getUser(ctx.from);
   await ctx.reply(
@@ -650,11 +649,23 @@ bot.hears("📢 Advertiser Menu", async ctx => {
 });
 
 // ---------- CAMPAIGN CREATION ----------
+
 bot.hears("➕ Create Campaign", async ctx => {
   getUser(ctx.from);
+
+  // Clear any previous payment or withdrawal conversation.
+  ctx.session.paymentFlow = null;
+
   ctx.session.taskSubmission = null;
-  ctx.session.wizard = { step: "campaign_title", campaign: {} };
-  await ctx.reply("➕ CREATE CAMPAIGN\n\nEnter a short campaign title:", Markup.removeKeyboard());
+  ctx.session.wizard = {
+    step: "campaign_title",
+    campaign: {}
+  };
+
+  await ctx.reply(
+    "➕ CREATE CAMPAIGN\n\nEnter a short campaign title:",
+    Markup.removeKeyboard()
+  );
 });
 
 bot.hears("📣 My Campaigns", async ctx => {
@@ -811,41 +822,6 @@ bot.hears("📤 Withdraw LTC", async ctx => {
   );
 });
 
-// ---------- TIER SELECTION ----------
-bot.action(/^tier:(tier1|tier2|tier3)$/, async ctx => {
-  const wizard = ctx.session.wizard;
-  if (!wizard || wizard.step !== "campaign_tier") {
-    return ctx.answerCbQuery("Start creating a campaign first.");
-  }
-
-  const tiers = {
-    tier1: { name: "Tier 1", bonus: 0.15 },
-    tier2: { name: "Tier 2", bonus: 0.10 },
-    tier3: { name: "Tier 3", bonus: 0.05 }
-  };
-
-  wizard.campaign.tier = tiers[ctx.match[1]].name;
-  wizard.campaign.bonus = tiers[ctx.match[1]].bonus;
-  wizard.step = "campaign_reward";
-
-  await ctx.answerCbQuery();
-  await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-  await ctx.reply(
-    `Selected: ${wizard.campaign.tier}\nTier bonus: ${wizard.campaign.bonus * 100}%\n\nSelect a reward pack:`,
-    Markup.inlineKeyboard([
-      [
-        Markup.button.callback("🥉 Bronze 5", "pack:5"),
-        Markup.button.callback("🥈 Silver 10", "pack:10")
-      ],
-      [
-        Markup.button.callback("🥇 Gold 20", "pack:20"),
-        Markup.button.callback("💎 Platinum 30", "pack:30")
-      ],
-      [Markup.button.callback("💠 Diamond 60", "pack:60")]
-    ])
-  );
-});
-
 // ---------- REWARD PACK SELECTION ----------
 bot.action(/^pack:(5|10|20|30|60)$/, async ctx => {
   const wizard = ctx.session.wizard;
@@ -871,26 +847,16 @@ bot.action(/^pack:(5|10|20|30|60)$/, async ctx => {
 
   await ctx.answerCbQuery("Reward pack selected.");
   await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+  
   await ctx.reply(
-    `Selected pack: ${packs[reward]}\nBase reward: ${reward} credits\n` +
-    `Tier-adjusted reward: ${wizard.campaign.effectiveReward} credits per completion\n\n` +
+    `Selected pack: ${packs[reward]}\n` +
+    `Reward: ${reward} credits per completion\n\n` +
     "Enter the number of completions, from 10 to 5000."
   );
+
 });
 
 // ---------- CAMPAIGN TYPE SELECTION ----------
-bot.action("campaign_type_visit", async ctx => {
-  const wizard = ctx.session.wizard;
-  if (!wizard || wizard.step !== "campaign_type") {
-    return ctx.answerCbQuery("Start creating a campaign first.");
-  }
-
-  wizard.campaign.type = "Visit and read content";
-  wizard.step = "campaign_url";
-  await ctx.answerCbQuery();
-  await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-  await ctx.reply("Enter the public URL of the content:");
-});
 
 bot.action("campaign_type_video", async ctx => {
   const wizard = ctx.session.wizard;
@@ -1711,13 +1677,13 @@ bot.on("text", async (ctx, next) => {
     return ctx.reply(
       "Choose your campaign type:",
       Markup.inlineKeyboard([
-        [Markup.button.callback("Visit Website / Read Article", "campaign_type_visit")],
         [Markup.button.callback("Watch Video", "campaign_type_video")],
         [Markup.button.callback("Social Engagement", "campaign_type_social")]
       ])
     );
   }
 
+  
   if (wizard.step === "campaign_url") {
     let parsed;
     try {
@@ -1731,16 +1697,29 @@ bot.on("text", async (ctx, next) => {
     }
 
     campaign.url = parsed.href;
-    wizard.step = "campaign_tier";
+    campaign.tier = "Global";
+    campaign.bonus = 0;
+    wizard.step = "campaign_reward";
+
     return ctx.reply(
-      "Choose a country traffic tier:",
+      "Select a reward pack:",
       Markup.inlineKeyboard([
-        [Markup.button.callback("Tier 1 (+15%)", "tier:tier1")],
-        [Markup.button.callback("Tier 2 (+10%)", "tier:tier2")],
-        [Markup.button.callback("Tier 3 (+5%)", "tier:tier3")]
+        [
+          Markup.button.callback("🥉 Bronze 5", "pack:5"),
+          Markup.button.callback("🥈 Silver 10", "pack:10")
+        ],
+        [
+          Markup.button.callback("🥇 Gold 20", "pack:20"),
+          Markup.button.callback("💎 Platinum 30", "pack:30")
+        ],
+        [
+          Markup.button.callback("💠 Diamond 60", "pack:60")
+        ]
       ])
     );
   }
+
+
 
   if (wizard.step === "campaign_completions") {
     const completions = Number(message);
@@ -2301,16 +2280,25 @@ bot.action(/^campaignreject:(\d+)$/, async ctx => {
 
  // ---------- TASK SELECTION ----------
 
+
 bot.action(/^taskselect:(\d+)$/, async ctx => {
   const campaignId = String(ctx.match[1]);
-  const campaign = db.campaigns.find(c => String(c.id) === campaignId);
+  const campaign = db.campaigns.find(
+    c => String(c.id) === campaignId
+  );
 
   if (!campaign || !isCampaignOpen(campaign)) {
-    return ctx.answerCbQuery("This campaign is no longer available.", { show_alert: true });
+    return ctx.answerCbQuery(
+      "This campaign is no longer available.",
+      { show_alert: true }
+    );
   }
 
   if (String(campaign.userId) === String(ctx.from.id)) {
-    return ctx.answerCbQuery("You cannot complete your own campaign.", { show_alert: true });
+    return ctx.answerCbQuery(
+      "You cannot complete your own campaign.",
+      { show_alert: true }
+    );
   }
 
   const duplicate = db.submissions.some(s =>
@@ -2320,79 +2308,40 @@ bot.action(/^taskselect:(\d+)$/, async ctx => {
   );
 
   if (duplicate) {
-    return ctx.answerCbQuery("You have already submitted this campaign.", { show_alert: true });
+    return ctx.answerCbQuery(
+      "You have already submitted this campaign.",
+      { show_alert: true }
+    );
   }
-
-  if (!Array.isArray(db.taskVerifications)) {
-    db.taskVerifications = [];
-  }
-
-  for (const item of db.taskVerifications) {
-    if (
-      String(item.userId) === String(ctx.from.id) &&
-      String(item.campaignId) === campaignId &&
-      item.status !== "used"
-    ) {
-      item.status = "expired";
-      item.websiteTokenHash = null;
-      item.websiteTokenExpiresAt = 0;
-    }
-  }
-
-  const websiteToken = crypto.randomBytes(32).toString("hex");
-  const tokenHash = crypto.createHash("sha256")
-    .update(websiteToken)
-    .digest("hex");
-
-  const waitSeconds = getTaskWaitSeconds(campaign);
-
-  db.taskVerifications.push({
-    id: crypto.randomBytes(8).toString("hex"),
-    userId: String(ctx.from.id),
-    campaignId,
-    status: "website_ready",
-    websiteTokenHash: tokenHash,
-    websiteTokenExpiresAt: Date.now() + 30 * 60 * 1000,
-    waitSeconds,
-    attempts: 0,
-    createdAt: new Date().toISOString()
-  });
-
-  saveDB();
 
   ctx.session.taskSubmission = {
     campaignId,
-    proofType: null,
-    keywordVerified: false,
-    awaitingCaptchaAnswer: false,
-    awaitingKeyword: true
+    proofType: null
   };
-
-  const baseUrl = String(
-    process.env.TASK_WEB_BASE_URL || "http://localhost:3000"
-  ).replace(/\/+$/, "");
-
-  const websiteUrl =
-    `${baseUrl}/task.html?campaign=${encodeURIComponent(campaignId)}` +
-    `&token=${encodeURIComponent(websiteToken)}`;
 
   await ctx.answerCbQuery();
 
   return ctx.reply(
     "📋 TASK INSTRUCTIONS\n\n" +
     `Campaign: ${campaign.title}\n` +
-    `Type: ${campaign.type || "Website"}\n` +
-    `Required timer: ${waitSeconds} seconds\n` +
+    `Type: ${campaign.type || "Social engagement"}\n` +
+    `Target: ${campaign.url}\n` +
     `Reward: ${campaign.effectiveReward || campaign.reward} credits\n\n` +
-    "1. Open the verification page.\n" +
-    "2. Start the timer on the webpage.\n" +
-    "3. Solve the CAPTCHA when the timer finishes.\n" +
-    "4. Send the keyword displayed on the webpage in this chat.\n" +
-    "5. Submit your proof for manual review.\n\n" +
-    "The verification link expires in 30 minutes.",
+    "Complete the campaign task, then choose how to submit your proof below.\n\n" +
+    "Only text and screenshot proof are accepted.",
     Markup.inlineKeyboard([
-      [Markup.button.url("🔐 Open Verification Page", websiteUrl)],
-      [Markup.button.url("🔗 Open Campaign", campaign.url)]
+      [
+        Markup.button.callback(
+          "📝 Submit Text",
+          "taskproof:text"
+        )
+      ],
+      [
+        Markup.button.callback(
+          "📸 Submit Screenshot",
+          "taskproof:photo"
+        )
+      ]
     ])
   );
 });
@@ -2454,14 +2403,14 @@ bot.action(/^tasktimerstart:(\d+)$/, async ctx => {
   }
   saveDB();
   await ctx.answerCbQuery("Countdown started.");
-  const sent = await ctx.reply(
+    await ctx.reply(
     `⏳ TASK TIMER\n\nTime remaining: ${verification.waitSeconds} seconds\n\nKeep the task open and return when the timer finishes. Then tap Check Timer.`,
-    Markup.inlineKeyboard([[
-      Markup.button.callback("Check Timer / Continue", `tasktimercheck:${campaignId}`)
-    ]])
+    Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Check Timer", `tasktimercheck:${campaignId}`)]
+    ])
   );
-  startTaskCountdownDisplay(bot, ctx.chat.id, sent.message_id, verification);
 });
+
 
 // ---------- TASK TIMER CHECK AND CAPTCHA ----------
 bot.action(/^tasktimercheck:(\d+)$/, async ctx => {
@@ -2512,7 +2461,7 @@ bot.action(/^tasktimercheck:(\d+)$/, async ctx => {
 });
 
 // ---------- CHOOSE TASK PROOF TYPE ----------
-bot.action(/^taskproof:(url|photo|text)$/, async ctx => {
+bot.action(/^taskproof:(photo|text)$/, async ctx => {
   const state = ctx.session.taskSubmission;
 
   if (!state) {
@@ -2542,14 +2491,6 @@ bot.action(/^taskproof:(url|photo|text)$/, async ctx => {
 async function saveTaskProof(ctx, proof, proofType) {
   const state = ctx.session.taskSubmission;
   if (!state) return false;
-
-  const verification = getTaskVerification(ctx.from.id, state.campaignId);
-  if (!state.keywordVerified || !verification || verification.status !== "verified" ||
-      Number(verification.keywordExpiresAt || 0) < Date.now()) {
-    ctx.session.taskSubmission = null;
-    await ctx.reply("❌ A valid, unused keyword is required before submitting proof. Please select the task and verify again.", mainMenu());
-    return true;
-  }
 
   const campaign = db.campaigns.find(
     c => String(c.id) === String(state.campaignId)
@@ -2585,17 +2526,12 @@ async function saveTaskProof(ctx, proof, proofType) {
     campaignId: String(campaign.id),
     proof,
     proofType,
-    keywordVerified: true,
-    verificationId: verification.id,
     status: "pending_review",
     submittedAt: new Date().toISOString()
   };
 
   db.submissions.push(submission);
-  verification.status = "used";
-  verification.usedAt = new Date().toISOString();
-  verification.submissionId = submission.id;
-  saveDB();
+    saveDB();
   ctx.session.taskSubmission = null;
 
   await ctx.reply(
@@ -2768,13 +2704,12 @@ if (state.awaitingKeyword) {
   saveDB();
 
   return ctx.reply(
-    "✅ KEYWORD VERIFIED\n\nChoose the proof type you want to submit:",
-    Markup.inlineKeyboard([
-      [Markup.button.callback("🔗 Submit URL", "taskproof:url")],
-      [Markup.button.callback("📸 Submit Screenshot", "taskproof:photo")],
-      [Markup.button.callback("📝 Submit Text", "taskproof:text")]
-    ])
-  );
+  "✅ KEYWORD VERIFIED\n\nChoose how to submit your proof:",
+  Markup.inlineKeyboard([
+    [Markup.button.callback("📸 Submit Screenshot", "taskproof:photo")],
+    [Markup.button.callback("📝 Submit Text", "taskproof:text")]
+  ])
+);
 }
 
   if (!state.proofType) {
@@ -2800,6 +2735,7 @@ if (state.awaitingKeyword) {
 });
 
 // Handle screenshot/photo proof
+
 bot.on("photo", async (ctx, next) => {
   const state = ctx.session.taskSubmission;
 
@@ -2808,17 +2744,42 @@ bot.on("photo", async (ctx, next) => {
   if (ctx.session.paymentFlow) return next();
 
   if (!state.proofType) {
-    return ctx.reply("Please choose Submit Screenshot first, then send your screenshot.");
+    return ctx.reply(
+      "Please choose Submit Screenshot first, then send your screenshot."
+    );
   }
 
   if (state.proofType !== "photo") {
-    return ctx.reply("You selected a different proof type. Please send the proof you selected.");
+    return ctx.reply(
+      "You selected a different proof type. Please send the proof you selected."
+    );
   }
 
   const photos = ctx.message.photo;
+
+  if (!Array.isArray(photos) || photos.length === 0) {
+    return ctx.reply(
+      "I couldn't read that screenshot. Please send it again as a photo."
+    );
+  }
+
   const bestPhoto = photos[photos.length - 1];
 
-  return saveTaskProof(ctx, bestPhoto.file_id, "Screenshot");
+  if (!bestPhoto.file_id) {
+    return ctx.reply(
+      "I couldn't identify that screenshot. Please send it again."
+    );
+  }
+
+  try {
+    return await saveTaskProof(ctx, bestPhoto.file_id, "Screenshot");
+  } catch (error) {
+    console.error("Screenshot proof submission failed:", error);
+
+    return ctx.reply(
+      "⚠️ I couldn't finish saving your screenshot proof. Please contact support before submitting it again."
+    );
+  }
 });
 // ---------- END TASK PROOF SUBMISSION ----------
 
