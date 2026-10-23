@@ -1,0 +1,310 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrafficPilot Admin</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#101426;color:#eef2ff;font:15px Arial,sans-serif}
+main{max-width:1200px;margin:28px auto;padding:16px}
+h1{margin-bottom:6px}
+.muted{color:#a8b1cc}
+.panel{background:#1b2340;border:1px solid #303b60;border-radius:12px;padding:18px;margin:16px 0}
+input,button,select{font:inherit;padding:11px;border-radius:7px;border:1px solid #465478}
+input,select{background:#111a31;color:white;max-width:100%}
+button{background:#7189ff;color:white;border:0;cursor:pointer;font-weight:bold}
+button:hover{opacity:.9}
+.hidden{display:none!important}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row input{flex:1;min-width:180px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{background:#111a31;padding:14px;border-radius:9px}
+.stat strong{font-size:24px;display:block;margin-top:8px;overflow-wrap:anywhere}
+.tablewrap{overflow:auto}
+table{border-collapse:collapse;width:100%;min-width:850px}
+th,td{text-align:left;padding:11px;border-bottom:1px solid #303b60;white-space:nowrap}
+th{background:#222d4d;position:sticky;top:0}
+.error{color:#ff9caa;white-space:pre-wrap}
+.success{color:#a5f3c4}
+small{color:#a8b1cc}
+</style>
+</head>
+<body>
+<main>
+  <h1>TrafficPilot Admin</h1>
+  <p class="muted">Private dashboard · Read-only user and transaction records</p>
+
+  <section id="login" class="panel">
+    <h2>Administrator login</h2>
+    <form id="loginForm">
+      <div class="row">
+        <input id="password" type="password" placeholder="Admin password"
+          autocomplete="current-password" required>
+        <button type="submit">Log in</button>
+      </div>
+    </form>
+    <p id="loginMessage" class="error" role="status"></p>
+  </section>
+
+  <section id="dashboard" class="hidden">
+    <div class="row">
+      <button id="refresh">Refresh data</button>
+      <button id="export">Export users CSV</button>
+      <button id="exportTransactions">Export transactions CSV</button>
+      <button id="logout">Log out</button>
+    </div>
+    <p id="status" role="status" class="muted"></p>
+
+    <div class="cards">
+      <div class="stat">Users<strong id="totalUsers">—</strong></div>
+      <div class="stat">Total credits<strong id="totalCredits">—</strong></div>
+      <div class="stat">Campaigns<strong id="totalCampaigns">—</strong></div>
+      <div class="stat">Submissions<strong id="totalSubmissions">—</strong></div>
+      <div class="stat">Deposits<strong id="totalDeposits">—</strong></div>
+    </div>
+
+    <section class="panel">
+      <h2>Users</h2>
+      <div class="row">
+        <input id="search" type="search" placeholder="Search ID, username, or name">
+        <select id="sort">
+          <option value="joined">Newest joined</option>
+          <option value="oldest">Oldest joined</option>
+          <option value="creditsHigh">Credits: high to low</option>
+          <option value="creditsLow">Credits: low to high</option>
+          <option value="name">Name A–Z</option>
+        </select>
+      </div>
+      <p id="userCount" class="muted"></p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr>
+            <th>Telegram ID</th><th>Name</th><th>Username</th>
+            <th>Credits</th><th>Campaigns completed</th><th>Joined</th>
+          </tr></thead>
+          <tbody id="usersBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Deposits</h2>
+      <div class="tablewrap">
+        <table><thead><tr>
+          <th>ID</th><th>User ID</th><th>Amount</th><th>Status</th><th>Date</th>
+        </tr></thead><tbody id="depositsBody"></tbody></table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Transactions</h2>
+      <div class="tablewrap">
+        <table><thead><tr>
+          <th>Date</th><th>User ID</th><th>Type</th><th>Amount</th><th>Description</th>
+        </tr></thead><tbody id="transactionsBody"></tbody></table>
+      </div>
+    </section>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+let data = null;
+const $ = id => document.getElementById(id);
+
+function safeText(value) {
+  return value == null ? "" : String(value);
+}
+
+function cell(row, value) {
+  const td = document.createElement("td");
+  td.textContent = safeText(value);
+  row.appendChild(td);
+}
+
+function dateText(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? safeText(value) : d.toLocaleString();
+}
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    cache: "no-store",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || "Request failed");
+  return result;
+}
+
+function showDashboard(visible) {
+  $("login").classList.toggle("hidden", visible);
+  $("dashboard").classList.toggle("hidden", !visible);
+}
+
+function campaignCounts() {
+  const counts = {};
+  const submissions = Array.isArray(data.submissions) ? data.submissions : [];
+  for (const s of submissions) {
+    if (String(s.status || "").toLowerCase() !== "approved") continue;
+    const id = String(s.userId ?? s.telegramId ?? "");
+    if (id) counts[id] = (counts[id] || 0) + 1;
+  }
+  return counts;
+}
+
+function userRows() {
+  const users = Object.values(data.users || {});
+  const counts = campaignCounts();
+  const q = $("search").value.trim().toLowerCase();
+
+  const filtered = users.filter(u => [
+    u.id, u.username, u.firstName, u.name
+  ].some(v => safeText(v).toLowerCase().includes(q)));
+
+  const sort = $("sort").value;
+  filtered.sort((a,b) => {
+    if (sort === "creditsHigh") return (Number(b.credits)||0)-(Number(a.credits)||0);
+    if (sort === "creditsLow") return (Number(a.credits)||0)-(Number(b.credits)||0);
+    if (sort === "name") return safeText(a.firstName || a.name).localeCompare(safeText(b.firstName || b.name));
+    const at = new Date(a.createdAt || 0).getTime() || 0;
+    const bt = new Date(b.createdAt || 0).getTime() || 0;
+    return sort === "oldest" ? at-bt : bt-at;
+  });
+
+  $("usersBody").replaceChildren();
+  for (const u of filtered) {
+    const tr = document.createElement("tr");
+    cell(tr, u.id);
+    cell(tr, u.firstName || u.name || "—");
+    cell(tr, u.username ? "@" + u.username : "—");
+    cell(tr, Number(u.credits)||0);
+    cell(tr, counts[String(u.id)] || 0);
+    cell(tr, dateText(u.createdAt));
+    $("usersBody").appendChild(tr);
+  }
+  $("userCount").textContent = `${filtered.length} of ${users.length} users`;
+}
+
+function render() {
+  const users = Object.values(data.users || {});
+  $("totalUsers").textContent = users.length;
+  $("totalCredits").textContent = users.reduce((sum,u)=>sum+(Number(u.credits)||0),0);
+  $("totalCampaigns").textContent = (data.campaigns || []).length;
+  $("totalSubmissions").textContent = (data.submissions || []).length;
+  $("totalDeposits").textContent = (data.deposits || []).length;
+
+  userRows();
+
+  $("depositsBody").replaceChildren();
+  for (const d of (data.deposits || []).slice().reverse()) {
+    const tr = document.createElement("tr");
+    cell(tr, d.id); cell(tr, d.userId ?? d.telegramId);
+    cell(tr, d.amount ?? d.credits ?? d.usdAmount);
+    cell(tr, d.status); cell(tr, dateText(d.createdAt || d.date));
+    $("depositsBody").appendChild(tr);
+  }
+
+  $("transactionsBody").replaceChildren();
+  for (const t of (data.transactions || []).slice().reverse()) {
+    const tr = document.createElement("tr");
+    cell(tr, dateText(t.createdAt || t.date));
+    cell(tr, t.userId); cell(tr, t.type); cell(tr, t.amount);
+    cell(tr, t.description);
+    $("transactionsBody").appendChild(tr);
+  }
+}
+
+async function loadData() {
+  $("status").textContent = "Loading private records…";
+  try {
+    data = await api("/api/admin/data");
+    showDashboard(true);
+    render();
+    $("status").textContent = "Data loaded. Last updated: " + new Date().toLocaleString();
+  } catch (err) {
+    data = null;
+    showDashboard(false);
+    $("status").textContent = "";
+    $("loginMessage").textContent = err.message;
+  }
+}
+
+function csvEscape(value) {
+  let text = safeText(value);
+  if (/^[=+\-@]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
+}
+
+function downloadCSV(filename, rows) {
+  const csv = rows.map(row => row.map(csvEscape).join(",")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], {type:"text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+$("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("loginMessage").textContent = "";
+  try {
+    await api("/api/admin/login", {
+      method: "POST",
+      body: JSON.stringify({password:$("password").value})
+    });
+    $("password").value = "";
+    await loadData();
+  } catch (err) {
+    $("loginMessage").textContent = err.message;
+  }
+});
+
+$("refresh").addEventListener("click", loadData);
+$("search").addEventListener("input", userRows);
+$("sort").addEventListener("change", userRows);
+
+$("export").addEventListener("click", () => {
+  const counts = campaignCounts();
+  const rows = [["Telegram ID","Name","Username","Credits","Approved submissions","Joined"]];
+  for (const u of Object.values(data.users || {})) {
+    rows.push([u.id,u.firstName||u.name,u.username,Number(u.credits)||0,
+      counts[String(u.id)]||0,u.createdAt]);
+  }
+  downloadCSV("trafficpilot-users.csv", rows);
+});
+
+$("exportTransactions").addEventListener("click", () => {
+  const rows = [["Date","User ID","Type","Amount","Description"]];
+  for (const t of (data.transactions || [])) {
+    rows.push([t.createdAt||t.date,t.userId,t.type,t.amount,t.description]);
+  }
+  downloadCSV("trafficpilot-transactions.csv", rows);
+});
+
+$("logout").addEventListener("click", async () => {
+  try { await api("/api/admin/logout", {method:"POST",body:"{}"}); } catch {}
+  data = null;
+  showDashboard(false);
+  $("status").textContent = "";
+  $("loginMessage").textContent = "Logged out.";
+});
+
+api("/api/admin/data").then(result => {
+  data = result;
+  showDashboard(true);
+  render();
+  $("status").textContent = "Session restored.";
+}).catch(() => showDashboard(false));
+</script>
+</body>
+</html>
