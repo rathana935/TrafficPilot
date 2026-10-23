@@ -364,6 +364,136 @@ app.post("/api/task/verify", (req, res) => {
   return res.json({ keyword });
 });
 
+
+/* ---------- PRIVATE ADMIN DASHBOARD API ---------- */
+
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+const adminSessions = new Map();
+const adminLoginAttempts = new Map();
+
+const ADMIN_SESSION_MS = 8 * 60 * 60 * 1000;
+
+function adminPasswordMatches(input) {
+  if (typeof input !== "string" || !ADMIN_PASSWORD) return false;
+
+  const supplied = Buffer.from(input, "utf8");
+  const expected = Buffer.from(ADMIN_PASSWORD, "utf8");
+
+  if (supplied.length !== expected.length) return false;
+
+  return crypto.timingSafeEqual(supplied, expected);
+}
+
+function getAdminSession(req) {
+  const cookieHeader = req.headers.cookie || "";
+  const match = cookieHeader.match(/(?:^|;\s*)tp_admin_session=([a-f0-9]{64})(?:;|$)/);
+
+  if (!match) return null;
+
+  const session = adminSessions.get(match[1]);
+
+  if (!session || session.expiresAt <= Date.now()) {
+    adminSessions.delete(match[1]);
+    return null;
+  }
+
+  return { token: match[1], session };
+}
+
+function requireAdmin(req, res, next) {
+  if (!getAdminSession(req)) {
+    return res.status(401).json({ error: "Admin login required." });
+  }
+
+  next();
+}
+
+app.post("/api/admin/login", (req, res) => {
+  if (!ADMIN_PASSWORD || ADMIN_PASSWORD.length < 16) {
+    return res.status(503).json({
+      error: "Admin password is not configured securely."
+    });
+  }
+
+  const ip = req.ip || req.socket.remoteAddress || "unknown";
+  const now = Date.now();
+  let attempts = adminLoginAttempts.get(ip);
+
+  if (!attempts || now - attempts.startedAt > 15 * 60 * 1000) {
+    attempts = { count: 0, startedAt: now };
+    adminLoginAttempts.set(ip, attempts);
+  }
+
+  if (attempts.count >= 10) {
+    return res.status(429).json({
+      error: "Too many login attempts. Try again in 15 minutes."
+    });
+  }
+
+  console.log("Admin login diagnostic:", {
+  receivedType: typeof req.body?.password,
+  receivedLength: typeof req.body?.password === "string"
+    ? req.body.password.length
+    : -1,
+  configuredLength: ADMIN_PASSWORD.length,
+  matches: adminPasswordMatches(req.body?.password)
+});
+
+if (!adminPasswordMatches(req.body?.password)) {
+    attempts.count += 1;
+    return res.status(401).json({ error: "Invalid admin password." });
+  }
+
+  adminLoginAttempts.delete(ip);
+
+  const token = crypto.randomBytes(32).toString("hex");
+
+  adminSessions.set(token, {
+    expiresAt: now + ADMIN_SESSION_MS
+  });
+
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader(
+    "Set-Cookie",
+    "tp_admin_session=" + token +
+      "; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800" +
+      (process.env.NODE_ENV === "production" ? "; Secure" : "")
+  );
+
+  return res.json({ success: true });
+});
+
+app.get("/api/admin/data", requireAdmin, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+
+  return res.json({
+    users: db.users,
+    campaigns: db.campaigns,
+    submissions: db.submissions,
+    transactions: db.transactions,
+    deposits: db.deposits,
+    withdrawals: db.withdrawals
+  });
+});
+
+app.post("/api/admin/logout", (req, res) => {
+  const current = getAdminSession(req);
+
+  if (current) {
+    adminSessions.delete(current.token);
+  }
+
+  res.setHeader(
+    "Set-Cookie",
+    "tp_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0" +
+      (process.env.NODE_ENV === "production" ? "; Secure" : "")
+  );
+
+  return res.json({ success: true });
+});
+
+/* ---------- END PRIVATE ADMIN DASHBOARD API ---------- */
+
 app.get("/health", (_req, res) => {
   res.json({ success: true, name: "TrafficPilot Task Website", status: "online" });
 });
@@ -570,6 +700,69 @@ bot.command("addcredits", async ctx => {
     `Test credits added successfully!\n\nAdded: ${amount} credits\nNew balance: ${user.credits} credits`
   );
 });
+
+
+bot.command("addcredit", async ctx => {
+  if (!ADMIN_ID || String(ctx.from.id) !== String(ADMIN_ID)) {
+    return ctx.reply("Access denied. Admin only.");
+  }
+
+  const args = ctx.message.text.trim().split(/\s+/);
+  const targetId = Number(args[1]);
+  const amount = Number(args[2]);
+
+  if (
+    !Number.isSafeInteger(targetId) ||
+    targetId <= 0 ||
+    !Number.isSafeInteger(amount) ||
+    amount < 1 ||
+    amount > 100000
+  ) {
+    return ctx.reply(
+      "Usage: /addcredit USER_ID AMOUNT\n" +
+      "Example: /addcredit 1813882536 100"
+    );
+  }
+
+  const user = db.users[String(targetId)];
+
+  if (!user) {
+    return ctx.reply(
+      "User not found in this database. Ask them to start the bot first, " +
+      "then check the database before trying again."
+    );
+  }
+
+  const currentBalance = Number(user.credits) || 0;
+  const newBalance = currentBalance + amount;
+
+  if (!Number.isSafeInteger(newBalance)) {
+    return ctx.reply("Credit balance is invalid. No change was made.");
+  }
+
+  user.credits = newBalance;
+
+  db.transactions.push({
+    id: Date.now().toString(),
+    userId: targetId,
+    adminId: ctx.from.id,
+    type: "admin_credit",
+    amount: amount,
+    description: "Admin restored credits",
+    createdAt: new Date().toISOString()
+  });
+
+  saveDB();
+
+  return ctx.reply(
+    "Credits added successfully!\n\n" +
+    "User ID: " + targetId + "\n" +
+    "Added: " + amount + " credits\n" +
+    "Previous balance: " + currentBalance + "\n" +
+    "New balance: " + newBalance
+  );
+});
+
 
 // ---------- MAIN MENU BUTTONS ----------
 bot.hears(["🏠 Home", "⬅️ Main Menu"], async ctx => {
