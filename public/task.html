@@ -4,46 +4,50 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TrafficPilot Task Verification</title>
+  <title>TrafficPilot Task</title>
   <style>
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 20px;
       background: #101426;
       color: #f4f6ff;
       font-family: Arial, sans-serif;
     }
-    main {
-      width: 100%;
-      max-width: 440px;
-      padding: 26px;
-      border: 1px solid #343b59;
-      border-radius: 18px;
+    header {
+      padding: 16px;
       background: #1a2038;
+      border-bottom: 1px solid #343b59;
     }
-    h1 { margin-top: 0; font-size: 25px; }
-    p { color: #c5cbe0; line-height: 1.6; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
     #timer {
-      margin: 22px 0;
-      font-size: 48px;
+      font-size: 34px;
       font-weight: bold;
-      text-align: center;
+      color: #a99cff;
+    }
+    #message { color: #c5cbe0; line-height: 1.5; }
+    #siteFrame {
+      display: block;
+      width: 100%;
+      height: 65vh;
+      min-height: 400px;
+      border: 0;
+      background: white;
+    }
+    #verification {
+      padding: 18px;
+      border-top: 1px solid #343b59;
     }
     input, button {
       width: 100%;
-      padding: 13px;
+      padding: 12px;
       margin-top: 10px;
-      border-radius: 9px;
+      border-radius: 8px;
       font-size: 16px;
     }
     input {
-      border: 1px solid #505a7d;
       background: #101426;
       color: white;
+      border: 1px solid #505a7d;
     }
     button {
       border: 0;
@@ -52,55 +56,62 @@
       font-weight: bold;
       cursor: pointer;
     }
-    button:disabled { opacity: .45; cursor: not-allowed; }
+    button:disabled { opacity: .5; }
     #captcha, #keywordBox { display: none; }
-    #message { overflow-wrap: anywhere; }
-    .note { font-size: 13px; }
+    .note { color: #c5cbe0; font-size: 13px; }
   </style>
 </head>
 <body>
-<main>
-  <h1>🚦 TrafficPilot</h1>
-  <p id="intro">Verifying your task. Please wait.</p>
+  <header>
+    <h1>🚦 TrafficPilot Task</h1>
+    <div>Time remaining: <span id="timer">--:--</span></div>
+    <p id="message">Loading task...</p>
+  </header>
 
-  <div id="timer">01:00</div>
+  <iframe id="siteFrame" title="Advertiser website"
+          referrerpolicy="no-referrer"></iframe>
 
-  <button id="startBtn">Start task timer</button>
+  <section id="verification">
+    <p id="frameNote" class="note">
+      Complete your visit on the advertiser's website while the timer runs.
+    </p>
 
-  <section id="captcha">
-    <h2>Human verification</h2>
-    <p id="question"></p>
-    <input id="answer" inputmode="numeric"
-           autocomplete="off" placeholder="Enter your answer">
-    <button id="verifyBtn">Verify answer</button>
+    <section id="captcha">
+      <h2>Human verification</h2>
+      <p id="question"></p>
+      <input id="answer" inputmode="numeric"
+             autocomplete="off" placeholder="Enter your answer">
+      <button id="verifyBtn">Verify answer</button>
+    </section>
+
+    <section id="keywordBox">
+      <h2>✅ Verification complete</h2>
+      <p>Your task keyword:</p>
+      <input id="keyword" readonly>
+      <button id="copyBtn">Copy keyword</button>
+      <p class="note">
+        Return to Telegram and submit the keyword with your task proof.
+      </p>
+    </section>
   </section>
-
-  <section id="keywordBox">
-    <h2>✅ Verification complete</h2>
-    <p>Your task keyword:</p>
-    <input id="keyword" readonly>
-    <button id="copyBtn">Copy keyword</button>
-    <p class="note">Return to Telegram and submit this keyword with your task proof.</p>
-  </section>
-
-  <p id="message" role="status"></p>
-</main>
 
 <script>
 (() => {
   const params = new URLSearchParams(location.search);
   const campaignId = params.get("campaign");
   const token = params.get("token");
+  const campaignUrl = params.get("url");
 
   const timer = document.getElementById("timer");
-  const startBtn = document.getElementById("startBtn");
+  const message = document.getElementById("message");
   const captcha = document.getElementById("captcha");
   const keywordBox = document.getElementById("keywordBox");
-  const message = document.getElementById("message");
+  const frame = document.getElementById("siteFrame");
 
   let interval = null;
   let startedAt = 0;
   let waitSeconds = 60;
+  let captchaRequested = false;
 
   function say(text) {
     message.textContent = text;
@@ -120,40 +131,19 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ campaignId, token, ...body })
     });
+
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Request failed");
+    if (!response.ok) {
+      throw new Error(data.error || "Request failed");
+    }
     return data;
   }
 
-  startBtn.addEventListener("click", async () => {
-    startBtn.disabled = true;
-    say("Starting secure timer...");
-    try {
-      const data = await api("start");
-      startedAt = data.startedAt;
-      waitSeconds = data.waitSeconds;
-      startBtn.style.display = "none";
-      say("Keep this page open while completing the task.");
-      tick();
-      interval = setInterval(tick, 1000);
-    } catch (e) {
-      startBtn.disabled = false;
-      say(e.message);
-    }
-  });
-
-  function tick() {
-    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
-    const remaining = Math.max(0, waitSeconds - elapsed);
-    showTime(remaining);
-    if (remaining === 0) {
-      clearInterval(interval);
-      interval = null;
-      requestCaptcha();
-    }
-  }
-
   async function requestCaptcha() {
+    if (captchaRequested) return;
+    captchaRequested = true;
+    clearInterval(interval);
+
     try {
       const data = await api("captcha");
       document.getElementById("question").textContent =
@@ -161,7 +151,46 @@
       captcha.style.display = "block";
       say("Timer completed. Solve the question to receive your keyword.");
     } catch (e) {
+      captchaRequested = false;
       say(e.message);
+    }
+  }
+
+  function tick() {
+    const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+    const remaining = Math.max(0, waitSeconds - elapsed);
+    showTime(remaining);
+
+    if (remaining === 0) {
+      requestCaptcha();
+    }
+  }
+
+  async function startTask() {
+    try {
+      say("Starting your task timer...");
+
+      // The server validates the task token and supplies the duration.
+      const data = await api("start");
+      startedAt = Number(data.startedAt);
+      waitSeconds = Number(data.waitSeconds);
+
+      if (
+        !Number.isFinite(startedAt) ||
+        !Number.isFinite(waitSeconds) ||
+        waitSeconds < 1
+      ) {
+        throw new Error("Invalid timer information from the server.");
+      }
+
+      say("Your task timer is running.");
+      tick();
+      if (waitSeconds > 0) {
+        interval = setInterval(tick, 1000);
+      }
+    } catch (e) {
+      say(e.message);
+      timer.textContent = "--:--";
     }
   }
 
@@ -169,6 +198,7 @@
     const answer = document.getElementById("answer").value.trim();
     const button = document.getElementById("verifyBtn");
     button.disabled = true;
+
     try {
       const data = await api("verify", { answer });
       captcha.style.display = "none";
@@ -184,6 +214,7 @@
 
   document.getElementById("copyBtn").addEventListener("click", async () => {
     const value = document.getElementById("keyword").value;
+
     try {
       await navigator.clipboard.writeText(value);
       say("Keyword copied.");
@@ -193,13 +224,26 @@
     }
   });
 
-  if (!campaignId || !token) {
-    startBtn.disabled = true;
-    say("Invalid task link. Please open this page from TrafficPilot.");
-  } else {
-    showTime(60);
-    // Timer starts only after the user clicks Start.
+  if (!campaignId || !token || !campaignUrl) {
+    say("Invalid task link. Open the task using the TrafficPilot bot.");
+    frame.style.display = "none";
+    return;
   }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(campaignUrl);
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      throw new Error("Unsupported website protocol.");
+    }
+  } catch {
+    say("The campaign website URL is invalid.");
+    frame.style.display = "none";
+    return;
+  }
+
+  frame.src = parsedUrl.href;
+  startTask();
 })();
 </script>
 </body>
